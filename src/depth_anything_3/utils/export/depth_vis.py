@@ -23,19 +23,35 @@ from depth_anything_3.utils.visualize import visualize_depth
 def export_to_depth_vis(
     prediction: Prediction,
     export_dir: str,
+    fps: float = 20,
+    macro_block_size: int = 2,
+    output_name: str = "depth_vis.mp4",
 ):
-    # Use prediction.processed_images, which is already processed image data
-    if prediction.processed_images is None:
-        raise ValueError("prediction.processed_images is required but not available")
+    out_dir = os.path.join(export_dir, "depth_vis")
+    os.makedirs(out_dir, exist_ok=True)
 
-    images_u8 = prediction.processed_images  # (N,H,W,3) uint8
+    filename = os.path.basename(output_name)
+    if not filename.lower().endswith(".mp4"):
+        filename = f"{filename}.mp4"
+    mp4_path = os.path.join(out_dir, filename)
 
-    os.makedirs(os.path.join(export_dir, "depth_vis"), exist_ok=True)
-    for idx in range(prediction.depth.shape[0]):
-        depth_vis = visualize_depth(prediction.depth[idx])
-        image_vis = images_u8[idx]
-        depth_vis = depth_vis.astype(np.uint8)
-        image_vis = image_vis.astype(np.uint8)
-        vis_image = np.concatenate([image_vis, depth_vis], axis=1)
-        save_path = os.path.join(export_dir, f"depth_vis/{idx:04d}.jpg")
-        imageio.imwrite(save_path, vis_image, quality=95)
+    # imageio 的 ffmpeg writer 默认 macro_block_size=16，会把非 16 倍数分辨率自动 resize（例如 322x182 -> 336x192）。
+    # 这里使用 macro_block_size=2：既能保持原始分辨率，又满足 yuv420p 的偶数宽高要求。
+    writer = imageio.get_writer(
+        mp4_path,
+        fps=fps,
+        codec="libx264",
+        macro_block_size=macro_block_size,
+        # 注意：imageio/ffmpeg writer 本身可能也会设置一次 pix_fmt，
+        # 如果这里再通过 ffmpeg_params 传 "-pix_fmt yuv420p" 会导致日志提示：
+        # "Multiple -pix_fmt options specified ... only the last option ... will be used."
+        # 用 pixelformat 参数更干净，避免重复传参。
+        pixelformat="yuv420p",
+    )
+
+    try:
+        for idx in range(prediction.depth.shape[0]):
+            depth_vis = np.asarray(visualize_depth(prediction.depth[idx]))
+            writer.append_data(depth_vis)
+    finally:
+        writer.close()

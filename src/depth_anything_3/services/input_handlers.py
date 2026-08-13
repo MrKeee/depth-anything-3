@@ -20,7 +20,8 @@ Handles different types of inputs (image, images, colmap, video)
 import glob
 import os
 from typing import List, Tuple
-import cv2
+
+import imageio
 import numpy as np
 import typer
 
@@ -189,26 +190,37 @@ class VideoHandler(InputHandler):
 
     @staticmethod
     def process(video_path: str, output_dir: str, fps: float = 1.0) -> List[str]:
-        """Process video, extract frames"""
+        """Process video, extract frames using decord (no OpenCV dependency)."""
         InputHandler.validate_path(video_path, "Video file")
 
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise typer.BadParameter(f"Cannot open video: {video_path}")
+        # Create output directory
+        frames_dir = os.path.join(output_dir, "input_images")
+        os.makedirs(frames_dir, exist_ok=True)
 
-        # Get video properties
-        video_fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / video_fps
+        try:
+            import decord  # type: ignore
+        except ImportError as e:
+            raise typer.BadParameter(
+                "Decord is required for video input but is not installed. "
+                "Install it with: pip install decord"
+            ) from e
+
+        try:
+            vr = decord.VideoReader(video_path)
+        except Exception as e:
+            raise typer.BadParameter(f"Failed to open video with decord: {e}") from e
+
+        video_fps = float(vr.get_avg_fps())
+        total_frames = len(vr)
+        duration = total_frames / video_fps if video_fps > 0 else 0.0
 
         # Calculate frame interval (ensure at least 1)
-        frame_interval = max(1, int(video_fps / fps))
-        actual_fps = video_fps / frame_interval
+        frame_interval = max(1, int(video_fps / fps)) if video_fps > 0 else 1
+        actual_fps = video_fps / frame_interval if video_fps > 0 else fps
 
         typer.echo(f"Video FPS: {video_fps:.2f}, Duration: {duration:.2f}s")
 
-        # Warn if requested FPS is higher than video FPS
-        if fps > video_fps:
+        if fps > video_fps and video_fps > 0:
             typer.echo(
                 f"⚠️  Warning: Requested sampling FPS ({fps:.2f}) exceeds video FPS ({video_fps:.2f})",  # noqa: E501
                 err=True,
@@ -218,29 +230,29 @@ class VideoHandler(InputHandler):
                 err=True,
             )
 
-        typer.echo(f"Extracting frames at {actual_fps:.2f} FPS (every {frame_interval} frame(s))")
+        typer.echo(
+            f"Extracting frames at {actual_fps:.2f} FPS (every {frame_interval} frame(s))"
+        )
 
-        # Create output directory
-        frames_dir = os.path.join(output_dir, "input_images")
-        os.makedirs(frames_dir, exist_ok=True)
-
-        frame_count = 0
         saved_count = 0
+        for idx in range(0, total_frames, frame_interval):
+            try:
+                frame = vr[idx].asnumpy()  # (H, W, C), RGB uint8
+            except Exception:
+                continue
+            frame_path = os.path.join(frames_dir, f"{saved_count:06d}.png")
+            imageio.imwrite(frame_path, frame)
+            saved_count += 1
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            if frame_count % frame_interval == 0:
-                frame_path = os.path.join(frames_dir, f"{saved_count:06d}.png")
-                cv2.imwrite(frame_path, frame)
-                saved_count += 1
-
-            frame_count += 1
-
-        cap.release()
         typer.echo(f"Extracted {saved_count} frames to {frames_dir}")
+
+        # Strict consistency check: require saved frames to match original frame count
+        if saved_count != total_frames:
+            raise typer.BadParameter(
+                f"Frame count mismatch: extracted {saved_count} frames, "
+                f"but video has {total_frames} frames. "
+                "Ensure the requested fps matches the video fps and that the video is decodable."
+            )
 
         # Get frame file list
         frame_files = sorted(

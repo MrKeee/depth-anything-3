@@ -43,7 +43,7 @@ def export(
     elif export_format == "feat_vis":
         export_to_feat_vis(prediction, export_dir, **kwargs.get(export_format, {}))
     elif export_format == "depth_vis":
-        export_to_depth_vis(prediction, export_dir)
+        export_to_depth_vis(prediction, export_dir, **kwargs.get(export_format, {}))
     elif export_format == "gs_ply":
         export_to_gs_ply(prediction, export_dir, **kwargs.get(export_format, {}))
     elif export_format == "gs_video":

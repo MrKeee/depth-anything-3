@@ -213,10 +213,13 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         # Convert raw output to prediction
         prediction = self._convert_to_prediction(raw_output)
 
+        '''
+        固定相机外参的视频不需要对齐相机外参
         # Align prediction to extrinsincs
         prediction = self._align_to_input_extrinsics_intrinsics(
             extrinsics, intrinsics, prediction, align_to_input_ext_scale
         )
+        '''
 
         # Add processed images for visualization
         prediction = self._add_processed_images(prediction, imgs_cpu)

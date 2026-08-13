@@ -14,7 +14,7 @@ authors = [{ name = "Your Name" }]
 dependencies = [
     "pre-commit",
     "trimesh",
-    "torch>=2",
+    "torch==2.9.1",
     "torchvision",
     "einops",
     "huggingface_hub",
@@ -43,8 +43,7 @@ dependencies = [
 
 [project.optional-dependencies]
 app = ["gradio>=5", "pillow>=9.0"] # requires that python3>=3.10
-gs = ["gsplat @ git+https://github.com/nerfstudio-project/gsplat.git@0b4dddf04cb687367602c01196913cde6a743d70"]
-all = ["depth-anything-3[app,gs]"]
+all = ["depth-anything-3[app]"]
 
 
 [project.scripts]
